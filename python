@@ -1,0 +1,910 @@
+import asyncio
+import logging
+import os
+import hashlib
+import threading
+from pathlib import Path
+from tkinter import *
+from tkinter import ttk, filedialog, messagebox
+from playwright.async_api import async_playwright
+from PIL import Image, ImageTk
+import io
+
+# Настройка логгера
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Максимальное количество одновременных загрузок на домофоны
+MAX_CONCURRENT_UPLOADS = 5
+
+# Конфигурация домофонов - ГРУППА "АЛМАТИНСКАЯ 4"
+DOMOPHONES_ALMATINSKA_4 = [
+    {
+        "name": "П1 Вызывная панель со стороны улицы",
+        "url": "http://11.23.24.2",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П1 Вызывная панель со стороны двора",
+        "url": "http://11.23.24.3",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П2 Вызывная панель со стороны улицы",
+        "url": "http://11.23.24.4",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П2 Вызывная панель со стороны двора",
+        "url": "http://11.23.24.5",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П3 Вызывная панель со стороны улицы",
+        "url": "http://11.23.24.6",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П3 Вызывная панель со стороны двора",
+        "url": "http://11.23.24.7",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П4 Вызывная панель со стороны улицы",
+        "url": "http://11.23.24.8",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П4 Вызывная панель со стороны двора",
+        "url": "http://11.23.24.9",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П5 Вызывная панель со стороны улицы",
+        "url": "http://11.23.24.10",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П5 Вызывная панель со стороны двора",
+        "url": "http://11.23.24.11",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Вызывная панель (Школа)",
+        "url": "http://11.23.24.12",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Вызывная панель (Главная)",
+        "url": "http://11.23.24.13",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка П1",
+        "url": "http://11.23.50.36",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка П6",
+        "url": "http://11.23.50.37",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+]
+
+# Конфигурация домофонов - ГРУППА "АЛМАТИНСКАЯ 6"
+DOMOPHONES_ALMATINSKA_6 = [
+    {
+        "name": "П1 Улица",
+        "url": "http://11.23.16.2",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П1 Двор",
+        "url": "http://11.23.16.3",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П2 Улица",
+        "url": "http://11.23.16.4",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П2 Двор",
+        "url": "http://11.23.16.5",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П3 Улица",
+        "url": "http://11.23.16.6",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П3 Двор",
+        "url": "http://11.23.16.7",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П4 Улица",
+        "url": "http://11.23.16.8",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П4 Двор",
+        "url": "http://11.23.16.9",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П5 Улица",
+        "url": "http://11.23.16.10",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "П5 Двор",
+        "url": "http://11.23.16.11",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка 1",
+        "url": "http://11.23.16.12",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка 2",
+        "url": "http://11.23.16.13",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка 3",
+        "url": "http://11.23.16.14",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+]
+
+# Конфигурация домофонов - ГРУППА "ТИМОФЕЯ ЧАРКОВА 87"
+DOMOPHONES_CHARKOVA_87 = [
+    {
+        "name": "1п. со стороны улицы",
+        "url": "http://11.23.8.10",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "1п. со стороны двора",
+        "url": "http://11.23.8.11",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "2п. со стороны улицы",
+        "url": "http://11.23.8.12",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "2п. со стороны двора",
+        "url": "http://11.23.8.13",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "3п. со стороны улицы",
+        "url": "http://11.23.8.14",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "3п. со стороны двора",
+        "url": "http://11.23.8.15",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "4п. со стороны улицы",
+        "url": "http://11.23.8.16",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "4п. со стороны двора",
+        "url": "http://11.23.8.17",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "5п. со стороны улицы",
+        "url": "http://11.23.8.18",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "5п. со стороны двора",
+        "url": "http://11.23.8.19",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка 2 (возле 5п.)",
+        "url": "http://11.23.8.20",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка 1 (возле 1п.)",
+        "url": "http://11.23.8.21",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Переход на 87 3п",
+        "url": "http://11.23.0.81",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+]
+
+# Конфигурация домофонов - ГРУППА "ТИМОФЕЯ ЧАРКОВА 91"
+DOMOPHONES_CHARKOVA_91 = [
+    {
+        "name": "1 подъезд, улица",
+        "url": "http://11.23.0.11",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "1 подъезд, двор",
+        "url": "http://11.23.0.12",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "2 подъезд, ул��ца",
+        "url": "http://11.23.0.13",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "2 подъезд, двор",
+        "url": "http://11.23.0.14",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "3 подъезд, улица 1",
+        "url": "http://11.23.0.15",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "3 подъезд, двор",
+        "url": "http://11.23.0.16",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "3 подъезд, улица 2",
+        "url": "http://11.23.0.17",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка между 2 и 3 П",
+        "url": "http://11.23.0.18",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка возле 1 П",
+        "url": "http://11.23.0.19",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+    {
+        "name": "Калитка возле 3 П",
+        "url": "http://11.23.0.20",
+        "username": "admin",
+        "password": "Hfr6k8hdcSL",
+        "enabled": True
+    },
+]
+
+# Конфигурация домофонов - ГРУППА "ТИМОФЕЯ ЧАРКОВА 93"
+DOMOPHONES_CHARKOVA_93 = [
+    {
+        "name": "Переход на 93",
+        "url": "http://11.23.0.82",
+        "username": "admin",
+        "password": "Yk4sE08bKEUBNjs=",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 1, улица",
+        "url": "http://11.23.65.1",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 1, двор",
+        "url": "http://11.23.65.2",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 1, улица лестница",
+        "url": "http://11.23.65.3",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 2, улица",
+        "url": "http://11.23.66.1",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 2, двор",
+        "url": "http://11.23.66.2",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 3, улица",
+        "url": "http://11.23.67.1",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 3, двор",
+        "url": "http://11.23.67.2",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 4, улица лестница",
+        "url": "http://11.23.68.1",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 4, двор",
+        "url": "http://11.23.68.2",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+    {
+        "name": "Подъезд 4, улица",
+        "url": "http://11.23.68.3",
+        "username": "admin",
+        "password": "admin",
+        "enabled": True
+    },
+]
+
+SCREENSHOT_DIR = "screenshots"
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+
+class DomophonesGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("🏢 Загрузка FaceID")
+        self.root.geometry("1200x800")
+        self.root.resizable(True, True)
+        
+        # Переменные
+        self.photo_path = StringVar(value="")
+        self.fio_text = StringVar(value="")
+        self.apartment_text = StringVar(value="")
+        self.user_hash = ""
+        
+        self.all_groups_list = [
+            ("АЛМАТИНСКАЯ 4", DOMOPHONES_ALMATINSKA_4, "all4", "none4"),
+            ("АЛМАТИНСКАЯ 6", DOMOPHONES_ALMATINSKA_6, "all6", "none6"),
+            ("ТИМОФЕЯ ЧАРКОВА 87", DOMOPHONES_CHARKOVA_87, "all87", "none87"),
+            ("ТИМОФЕЯ ЧАРКОВА 91", DOMOPHONES_CHARKOVA_91, "all91", "none91"),
+            ("ТИМОФЕЯ ЧАРКОВА 93", DOMOPHONES_CHARKOVA_93, "all93", "none93"),
+        ]
+        
+        self.checkbuttons = {}
+        self.is_uploading = False
+        
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Создание интерфейса"""
+        # Главный фрейм
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
+        
+        # ===== ЛЕВАЯ ПАНЕЛЬ =====
+        left_frame = ttk.Frame(main_frame)
+        left_frame.pack(side=LEFT, fill=Y, expand=False, padx=(0, 10))
+        
+        # Раздел параметров
+        ttk.Label(left_frame, text="📋 ПАРАМЕТРЫ", font=("Arial", 12, "bold")).pack(anchor=W, pady=(0, 10))
+        
+        # ФИО
+        ttk.Label(left_frame, text="👤 ФИО:").pack(anchor=W)
+        ttk.Entry(left_frame, textvariable=self.fio_text, width=30).pack(fill=X, pady=(0, 10))
+        
+        # Номер квартиры
+        ttk.Label(left_frame, text="🏠 Номер квартиры:").pack(anchor=W)
+        ttk.Entry(left_frame, textvariable=self.apartment_text, width=30).pack(fill=X, pady=(0, 10))
+        
+        # Кнопка для установки ФИО и квартиры
+        ttk.Button(left_frame, text="✅ Установить ФИО и квартиру", 
+                  command=self.set_user_info).pack(fill=X, pady=(0, 20))
+        
+        # Фото
+        ttk.Label(left_frame, text="📸 Выбранное фото:", font=("Arial", 10, "bold")).pack(anchor=W, pady=(10, 0))
+        photo_label = ttk.Label(left_frame, text="Не выбрано", foreground="red")
+        photo_label.pack(anchor=W, pady=(0, 5))
+        self.photo_label = photo_label
+        
+        ttk.Button(left_frame, text="🗂️ Выбрать фото", command=self.select_photo).pack(fill=X, pady=(0, 20))
+        
+        # MD5 Hash
+        ttk.Label(left_frame, text="🔒 MD5 Hash:", font=("Arial", 10, "bold")).pack(anchor=W, pady=(10, 0))
+        hash_display = Text(left_frame, height=3, width=30, state=DISABLED, bg="#f0f0f0")
+        hash_display.pack(fill=X, pady=(0, 20))
+        self.hash_display = hash_display
+        
+        # Разделитель
+        ttk.Separator(left_frame, orient=HORIZONTAL).pack(fill=X, pady=10)
+        
+        # Управление домофонами
+        ttk.Label(left_frame, text="🏠 ДОМОФОНЫ", font=("Arial", 12, "bold")).pack(anchor=W, pady=(0, 10))
+        
+        ttk.Button(left_frame, text="✅ Включить все", 
+                  command=self.enable_all).pack(fill=X, pady=5)
+        ttk.Button(left_frame, text="❌ Отключить все", 
+                  command=self.disable_all).pack(fill=X, pady=(0, 20))
+        
+        # ===== ПРАВАЯ ПАНЕЛЬ =====
+        right_frame = ttk.Frame(main_frame)
+        right_frame.pack(side=RIGHT, fill=BOTH, expand=True)
+        
+        # Список домофонов
+        ttk.Label(right_frame, text="📱 СПИСОК ДОМОФОНОВ", font=("Arial", 12, "bold")).pack(anchor=W, pady=(0, 10))
+        
+        # Scroll frame
+        canvas_frame = ttk.Frame(right_frame)
+        canvas_frame.pack(fill=BOTH, expand=True)
+        
+        canvas = Canvas(canvas_frame, bg="white", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient=VERTICAL, command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.pack(side=RIGHT, fill=Y)
+        
+        # Привязка прокрутки мыши к canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _on_mousewheel_linux(event):
+            if event.num == 4:
+                canvas.yview_scroll(-3, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(3, "units")
+        
+        # Функция для рекурсивной привязки событий ко всем элементам
+        def bind_mousewheel_to_children(widget):
+            """Привязывает события прокрутки мыши ко всем потомкам виджета"""
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            widget.bind("<Button-4>", _on_mousewheel_linux)
+            widget.bind("<Button-5>", _on_mousewheel_linux)
+            
+            # Рекурсивно привязываем ко всем потомкам
+            for child in widget.winfo_children():
+                bind_mousewheel_to_children(child)
+        
+        # Привязка для Windows и Mac
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        # Привязка для Linux
+        canvas.bind("<Button-4>", _on_mousewheel_linux)
+        canvas.bind("<Button-5>", _on_mousewheel_linux)
+        
+        # Добавление домофонов в список
+        for group_name, group_domos, _, _ in self.all_groups_list:
+            group_frame = ttk.LabelFrame(scrollable_frame, text=f"🏢 {group_name}", padding=10)
+            group_frame.pack(fill=X, padx=5, pady=5)
+            
+            for i, domo in enumerate(group_domos):
+                var = BooleanVar(value=domo["enabled"])
+                domo["var"] = var
+                
+                check = ttk.Checkbutton(
+                    group_frame,
+                    text=f"{domo['name']} ({domo['url']})",
+                    variable=var,
+                    command=lambda d=domo, v=var: self.toggle_domophone(d, v)
+                )
+                check.pack(anchor=W, pady=2)
+                self.checkbuttons[i] = check
+        
+        # После добавления всех элементов привязываем прокрутку ко всем потомкам
+        bind_mousewheel_to_children(scrollable_frame)
+        
+        # ===== НИЖНЯЯ ПАНЕЛЬ =====
+        bottom_frame = ttk.Frame(self.root)
+        bottom_frame.pack(fill=X, padx=10, pady=10)
+        
+        ttk.Button(bottom_frame, text="🚀 НАЧАТЬ ЗАГРУЗКУ", command=self.start_upload).pack(side=LEFT, padx=5)
+        ttk.Button(bottom_frame, text="❌ Отмена", command=self.root.quit).pack(side=LEFT, padx=5)
+        
+        # Прогресс
+        self.progress_label = ttk.Label(bottom_frame, text="", foreground="blue")
+        self.progress_label.pack(side=LEFT, padx=20)
+    
+    def set_user_info(self):
+        """Установить ФИО и номер квартиры"""
+        fio = self.fio_text.get().strip()
+        apartment = self.apartment_text.get().strip()
+        
+        if not fio:
+            messagebox.showerror("❌ Ошибка", "Введите ФИО!")
+            return
+        
+        if not apartment:
+            messagebox.showerror("❌ Ошибка", "Введите номер квартиры!")
+            return
+        
+        try:
+            apt_num = int(apartment)
+            if apt_num < 1 or apt_num > 9999:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("❌ Ошибка", "Номер квартиры должен быть от 1 до 9999!")
+            return
+        
+        # Преобразование в MD5
+        md5_hash = hashlib.md5(fio.encode()).hexdigest()
+        apartment_formatted = f"{apt_num:04d}"
+        self.user_hash = md5_hash + apartment_formatted
+        
+        # Обновление отображения
+        self.hash_display.config(state=NORMAL)
+        self.hash_display.delete(1.0, END)
+        self.hash_display.insert(1.0, f"ФИО: {fio}\nКвартира: {apartment_formatted}\nHash: {self.user_hash}")
+        self.hash_display.config(state=DISABLED)
+        
+        messagebox.showinfo("✅ Успех", f"ФИО и квартира установлены!\n\nHash: {self.user_hash}")
+    
+    def select_photo(self):
+        """Выбрать фото"""
+        desktop_path = Path.home() / "Desktop" / "1111"
+        
+        file_path = filedialog.askopenfilename(
+            title="Выберите фото",
+            initialdir=str(desktop_path),
+            filetypes=[("Изображения", "*.jpg *.jpeg *.png *.bmp"), ("Все файлы", "*.*")]
+        )
+        
+        if file_path:
+            self.photo_path.set(file_path)
+            file_name = Path(file_path).name
+            self.photo_label.config(text=f"✅ {file_name}", foreground="green")
+            messagebox.showinfo("✅ Успех", f"Фото выбрано:\n{file_path}")
+    
+    def toggle_domophone(self, domo, var):
+        """Переключить домофон"""
+        domo["enabled"] = var.get()
+    
+    def enable_all(self):
+        """Включить все домофоны"""
+        for _, group_domos, _, _ in self.all_groups_list:
+            for domo in group_domos:
+                domo["enabled"] = True
+                if "var" in domo:
+                    domo["var"].set(True)
+    
+    def disable_all(self):
+        """Отключить все домофоны"""
+        for _, group_domos, _, _ in self.all_groups_list:
+            for domo in group_domos:
+                domo["enabled"] = False
+                if "var" in domo:
+                    domo["var"].set(False)
+    
+    def start_upload(self):
+        """Начать загрузку"""
+        if not self.photo_path.get():
+            messagebox.showerror("❌ Ошибка", "Выберите фото!")
+            return
+        
+        if not self.user_hash:
+            messagebox.showerror("❌ Ошибка", "Установите ФИО и квартиру!")
+            return
+        
+        if not os.path.exists(self.photo_path.get()):
+            messagebox.showerror("❌ Ошибка", "Файл фото не найден!")
+            return
+        
+        # Сбор включённых домофонов
+        enabled_domos = []
+        for _, group_domos, _, _ in self.all_groups_list:
+            for domo in group_domos:
+                if domo["enabled"]:
+                    enabled_domos.append(domo)
+        
+        if not enabled_domos:
+            messagebox.showerror("❌ Ошибка", "Выберите хотя бы один домофон!")
+            return
+        
+        # Подтверждение
+        if messagebox.askyesno("Подтверждение", f"Загрузить на {len(enabled_domos)} домофонов?"):
+            self.is_uploading = True
+            thread = threading.Thread(target=self.run_upload, args=(enabled_domos,), daemon=True)
+            thread.start()
+    
+    def run_upload(self, enabled_domos):
+        """Выполнить загрузку в отдельном потоке"""
+        try:
+            asyncio.run(self.async_upload(enabled_domos))
+        except Exception as e:
+            messagebox.showerror("❌ Ошибка", f"Ошибка при загрузке: {str(e)}")
+        finally:
+            self.is_uploading = False
+            self.progress_label.config(text="")
+    
+    async def async_upload(self, enabled_domos):
+        """Асинхронная загрузка на домофоны (параллельно до 5)"""
+        results = []
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
+        
+        async def upload_with_semaphore(domo, index, total):
+            """Загрузка с ограничением одновременных подключений"""
+            async with semaphore:
+                self.progress_label.config(text=f"Загрузка... ({len(results)}/{total} завершено)")
+                self.root.update()
+                
+                async with async_playwright() as p:
+                    success = await self.upload_to_domophone(domo, p)
+                    results.append((domo["name"], success))
+                    
+                    self.progress_label.config(
+                        text=f"Загрузка... ({len(results)}/{total} завершено)"
+                    )
+                    self.root.update()
+                
+                return success
+        
+        # Запуск параллельных загрузок
+        tasks = [
+            upload_with_semaphore(domo, i, len(enabled_domos))
+            for i, domo in enumerate(enabled_domos)
+        ]
+        
+        await asyncio.gather(*tasks)
+        
+        # Итоговый отчёт
+        success_count = sum(1 for _, success in results if success)
+        report = f"✅ Успешных: {success_count}/{len(results)}\n\n"
+        
+        for name, success in results:
+            status = "✅" if success else "❌"
+            report += f"{status} {name}\n"
+        
+        messagebox.showinfo("📊 Итоговый отчёт", report)
+    
+    async def upload_to_domophone(self, domo, p):
+        """Загрузить фото на один домофон"""
+        domo_name = domo["name"]
+        domo_url = domo["url"]
+        
+        try:
+            browser = await p.chromium.launch(headless=True)
+            
+            try:
+                context = await browser.new_context(
+                    http_credentials={"username": domo["username"], "password": domo["password"]}
+                )
+                page = await context.new_page()
+                await page.goto(domo_url)
+                await page.wait_for_timeout(3000)
+                
+                # Переход в Настройки
+                settings_menu = page.locator("a:has-text('Настройки'), a:has-text('Settings')")
+                if await settings_menu.count() == 0:
+                    await context.close()
+                    return False
+                await settings_menu.click()
+                await page.wait_for_timeout(2000)
+                
+                # Переход в Распознавание лиц
+                face_recognition_menu = page.locator("a:has-text('Распознавание лиц'), a:has-text('Face Recognition')")
+                if await face_recognition_menu.count() == 0:
+                    await context.close()
+                    return False
+                await face_recognition_menu.click()
+                await page.wait_for_timeout(2000)
+                
+                # Переход в База данных
+                db_menu = page.locator("a:has-text('База данных'), a:has-text('Database')")
+                if await db_menu.count() == 0:
+                    await context.close()
+                    return False
+                await db_menu.click()
+                await page.wait_for_timeout(5000)
+                
+                # Переключение на iframe
+                iframe_locator = page.frame_locator("#set_fm")
+                
+                try:
+                    await iframe_locator.locator("body").wait_for(timeout=10000)
+                except:
+                    await context.close()
+                    return False
+                
+                # Проверка фото
+                if not os.path.exists(self.photo_path.get()):
+                    await context.close()
+                    return False
+                
+                # Загрузка фото
+                file_input = iframe_locator.locator("input[type='file']")
+                if await file_input.count() == 0:
+                    upload_btn = iframe_locator.locator(
+                        "button:has-text('Выбрать файл'), button:has-text('Выбрать')"
+                    )
+                    if await upload_btn.count() > 0:
+                        await upload_btn.first.click()
+                        await page.wait_for_timeout(2000)
+                    else:
+                        await context.close()
+                        return False
+                
+                file_input = iframe_locator.locator("input[type='file']")
+                if await file_input.count() == 0:
+                    await context.close()
+                    return False
+                
+                await file_input.first.set_input_files(self.photo_path.get())
+                
+                # Заполнение ФИО (MD5 Hash)
+                name_field = iframe_locator.locator("#uName")
+                if await name_field.count() == 0:
+                    name_field = iframe_locator.locator("input[placeholder*='ФИО'], input[placeholder*='Name']")
+                    if await name_field.count() == 0:
+                        await context.close()
+                        return False
+                
+                await name_field.first.fill(self.user_hash)
+                
+                # Кнопка "Загрузить"
+                load_btn = iframe_locator.locator("a.btn104.act[href='javascript:;']:has(#btnLoad)")
+                if await load_btn.count() == 0:
+                    await context.close()
+                    return False
+                
+                btn_load = load_btn.first
+                is_disabled = await btn_load.is_disabled()
+                
+                if is_disabled:
+                    await page.wait_for_timeout(5000)
+                    is_disabled = await btn_load.is_disabled()
+                    if is_disabled:
+                        try:
+                            await page.evaluate("document.getElementById('set_fm').contentWindow.loadImage()")
+                        except:
+                            await context.close()
+                            return False
+                
+                await btn_load.click()
+                await page.wait_for_timeout(2000)
+                
+                # Сохранение
+                try:
+                    await page.evaluate("document.getElementById('set_fm').contentWindow.saveUserData()")
+                except:
+                    await context.close()
+                    return False
+                
+                await page.wait_for_timeout(2000)
+                await context.close()
+                return True
+            
+            finally:
+                await browser.close()
+        
+        except Exception as e:
+            return False
+
+
+if __name__ == "__main__":
+    root = Tk()
+    gui = DomophonesGUI(root)
+    root.mainloop()
